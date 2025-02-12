@@ -1,0 +1,61 @@
+trigger:
+  branches:
+    include:
+    - develop
+pool:
+  vmImage: windows-latest
+variables:
+- name: feed_name
+  value: "AnsysMinervaPackages"
+- name: repo_name
+  value: "Configurations"
+stages:
+- stage: __default
+  jobs:
+  - job: detectAmpkg
+    steps:
+    - task: Bash@3
+      displayName: 'install Python lxml package'
+      inputs:
+        targetType: 'inline'
+        script: 'pip install lxml'
+    - task: Bash@3
+      displayName: 'install Python requests package'
+      inputs:
+        targetType: 'inline'
+        script: 'pip install requests'
+    - task: PythonScript@0
+      displayName: 'List Minerva Packages'
+      env:
+        CUSTOM: $(custom_pat)
+      inputs:
+        scriptSource: 'filePath'
+        scriptPath: 'Utilities/Configurator/pipeline/_build_pipeline/list_packages.py'
+        arguments: --feed_name "$(feed_name)" --repo_name "$(repo_name)"
+      name: setTargets
+  - job: publishArtifact
+    dependsOn:
+    - detectAmpkg
+    condition: eq(dependencies.detectAmpkg.outputs['setTargets.do_publish'],true)
+    displayName: 'Publish Artifact'
+    strategy:
+      matrix: $[ dependencies.detectAmpkg.outputs['setTargets.targets'] ]
+    variables:
+    - name: targets
+      value: $[ dependencies.detectAmpkg.outputs['setTargets.targets'] ]
+    steps:
+    - task: PythonScript@0
+      displayName: 'Create Minerva Package'
+      inputs:
+        scriptSource: 'filePath'
+        scriptPath: 'Utilities/Configurator/pipeline/_build_pipeline/create_package.py'
+        arguments: --manifest_path "$(manifest_path)"
+    - task: Npm@1
+      displayName: 'Publish Minerva Package'
+      inputs:
+        command: 'publish'
+        workingDir: '$(Build.SourcesDirectory)/__tmp'
+        publishRegistry: 'useFeed'
+        publishFeed: '87fafc28-a10a-4fcd-bf5f-fdc8798dc477/3930adf9-ffc7-4dbe-a134-df2e3fcfcd93'
+        publishPackageMetadata: True
+
